@@ -1,0 +1,53 @@
+name: release
+
+on: push
+
+jobs:
+  create:
+    runs-on: macos-latest
+    steps:
+    - uses:  actions/checkout@v2
+    - uses:  actions/cache@v2
+      with:
+        path: packer_cache
+        key:  sha256:39542f9c0c597c139f0ad4bb7fe24b0a0b53f72b6602094155d1aa7730c87c10
+    - name:  Run packer build
+      env:
+        VERSION:      0.11.0
+        ISO_CHECKSUM: sha256:39542f9c0c597c139f0ad4bb7fe24b0a0b53f72b6602094155d1aa7730c87c10
+      run: |
+        set -eux
+        VBoxManage -v
+        packer -v
+        packer build -only=virtualbox-iso \
+          -var version=$VERSION \
+          -var headless=true \
+          -var iso_url=https://github.com/rancher/k3os/releases/download/v$VERSION/k3os-amd64.iso \
+          -var iso_checksum=$ISO_CHECKSUM \
+          template.json
+        file=k3os-openstack.vmdk
+        mv output-virtualbox-iso/k3os-disk001.vmdk $file
+        echo -e "md5: $(md5 -q $file)  $file\nsha256: $(shasum -a 256 $file)" | tee checksums.txt
+    - uses:  actions/create-release@v1
+      id:    create_release
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        tag_name: v0.11.0
+        release_name: v0.11.0
+    - uses:  actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        upload_url: ${{steps.create_release.outputs.upload_url}}
+        asset_path: k3os-openstack.vmdk
+        asset_name: k3os-openstack.vmdk
+        asset_content_type: application/octet-stream
+    - uses:  actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
+      with:
+        upload_url: ${{steps.create_release.outputs.upload_url}}
+        asset_path: checksums.txt
+        asset_name: checksums.txt
+        asset_content_type: text/plain
